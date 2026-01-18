@@ -15,12 +15,10 @@ export default function Home() {
 
   // 1. CHECK IF USER IS LOGGED IN
   useEffect(() => {
-    // Check active session on load
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
 
-    // Listen for changes (Login/Logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -28,7 +26,7 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Load Face Models (Only if logged in)
+  // 2. Load Face Models
   useEffect(() => {
     if (session) { 
       const loadModels = async () => {
@@ -43,17 +41,15 @@ export default function Home() {
     }
   }, [session]);
 
-  // 3. UPDATED Login Function (Redirects to Home)
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${location.origin}`, // <--- Changed this to fix the error!
+        redirectTo: `${location.origin}`,
       },
     });
   };
 
-  // 4. Logout Function
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCameraActive(false); 
@@ -93,18 +89,16 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // Save to Supabase
       const { error } = await supabase
         .from('entries')
         .insert([{ 
           mood: mood, 
           note: note,
-          // user_email: session.user.email // (We can enable this later!)
+          // user_id is handled automatically by RLS now!
         }]);
 
       if (error) throw error;
 
-      // Ask Gemini for a joke
       const response = await fetch('/api/cheer-up', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -123,7 +117,10 @@ export default function Home() {
     }
   };
 
-  // --- LOGIN SCREEN (Shown when NOT logged in) ---
+  // --- HELPER: CHECK FOR "CONCERN" MOODS ---
+  const isNegativeMood = ['sad', 'angry', 'fearful', 'disgusted'].includes(mood);
+
+  // --- LOGIN SCREEN ---
   if (!session) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-5">
@@ -138,7 +135,6 @@ export default function Home() {
             onClick={handleLogin}
             className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition transform hover:scale-105"
           >
-            {/* Simple Google Icon SVG */}
             <svg className="w-6 h-6" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -152,7 +148,7 @@ export default function Home() {
     );
   }
 
-  // --- MAIN APP (Shown when Logged In) ---
+  // --- MAIN APP ---
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-5">
       
@@ -160,13 +156,23 @@ export default function Home() {
         <h1 className="text-xl md:text-2xl font-bold text-purple-400">
           Hello, {session.user.user_metadata.full_name?.split(' ')[0]}! 👋
         </h1>
-        <button 
-          onClick={handleLogout} 
-          className="text-sm border border-red-500 text-red-400 px-3 py-1 rounded hover:bg-red-500 hover:text-white transition"
-        >
+        <button onClick={handleLogout} className="text-sm border border-red-500 text-red-400 px-3 py-1 rounded hover:bg-red-500 hover:text-white transition">
           Sign Out
         </button>
       </div>
+
+      {/* --- SAFETY BANNER (Only shows for negative moods) --- */}
+      {isNegativeMood && (
+        <div className="w-full max-w-2xl bg-blue-900/50 border border-blue-500 p-4 rounded-lg mb-6 flex flex-col md:flex-row items-center justify-between gap-4 animate-pulse">
+          <div className="text-center md:text-left">
+            <h3 className="font-bold text-blue-300">Feeling overwhelmed?</h3>
+            <p className="text-sm text-blue-100">You are not alone. Free support is available 24/7.</p>
+          </div>
+          <a href="tel:14416" className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-full text-sm">
+             📞 Call Tele MANAS (14416)
+          </a>
+        </div>
+      )}
 
       <Link href="/history">
         <button className="mb-6 px-4 py-1 bg-gray-700 rounded-full text-sm hover:bg-gray-600 transition">
@@ -188,7 +194,9 @@ export default function Home() {
 
       <div className="mt-6 text-center space-y-4">
         <p className="text-2xl">
-          Current Mood: <span className="font-bold text-yellow-400 capitalize">{mood || "Scanning..."}</span>
+          Current Mood: <span className={`font-bold capitalize ${isNegativeMood ? 'text-blue-400' : 'text-yellow-400'}`}>
+            {mood || "Scanning..."}
+          </span>
         </p>
 
         {!cameraActive && (
@@ -217,6 +225,11 @@ export default function Home() {
             {loading ? "Asking AI..." : "Save Mood & Get Joke ✨"}
           </button>
         </div>
+      </div>
+      
+      {/* Footer Trust Badge */}
+      <div className="mt-12 text-gray-500 text-xs">
+        <p>🔒 Your data is encrypted and private.</p>
       </div>
     </div>
   );
